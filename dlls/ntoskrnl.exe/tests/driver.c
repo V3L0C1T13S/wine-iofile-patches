@@ -2841,5 +2841,9 @@ NTSTATUS WINAPI DriverEntry(DRIVER_OBJECT *driver, PUNICODE_STRING registry)
     work_item = IoAllocateWorkItem(lower_device);
     ok(work_item != NULL, "work_item = NULL\n");
 
+    status = IoCreateFile( driver, 0, &nameW, CreateFileTypeNone, NULL, 0, FILE_SHARE_READ | FILE_SHARE_WRITE
+                          | FILE_SHARE_DELETE, FILE_OPEN, 0, NULL, NULL );
+    ok(!status, "failed to create file, status %#lx\n", status);
+
     return STATUS_SUCCESS;
 }
