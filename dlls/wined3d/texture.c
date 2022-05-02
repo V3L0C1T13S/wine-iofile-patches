@@ -279,6 +279,9 @@ static bool fbo_blitter_supported(enum wined3d_blit_op blit_op, const struct win
     if ((wined3d_settings.offscreen_rendering_mode != ORM_FBO) || !gl_info->fbo_ops.glBlitFramebuffer)
         return false;
 
+    if ((src_resource->format_flags | dst_resource->format_flags) & WINED3DFMT_FLAG_HEIGHT_SCALE)
+        return false;
+
     /* Source and/or destination need to be on the GL side. */
     if (!(src_resource->access & dst_resource->access & WINED3D_RESOURCE_ACCESS_GPU))
         return false;
@@ -2096,7 +2099,8 @@ void wined3d_texture_gl_prepare_texture(struct wined3d_texture_gl *texture_gl,
     const struct wined3d_format_gl *format_gl;
     GLenum internal;
 
-    TRACE("texture_gl %p, context_gl %p, format %s.\n", texture_gl, context_gl, debug_d3dformat(format->id));
+    TRACE("texture_gl %p, context_gl %p, srgb %d, format %s.\n",
+            texture_gl, context_gl, srgb, debug_d3dformat(format->id));
 
     if (!d3d_info->shader_color_key
             && !(texture_gl->t.async.flags & WINED3D_TEXTURE_ASYNC_COLOR_KEY)
@@ -6454,6 +6458,7 @@ static DWORD raw_blitter_blit(struct wined3d_blitter *blitter, enum wined3d_blit
      * We also can't copy between depth/stencil and colour resources, since
      * the formats are considered incompatible in OpenGL. */
     if (op != WINED3D_BLIT_OP_RAW_BLIT || !gl_formats_compatible(src_texture, src_location, dst_texture, dst_location)
+            || ((src_texture->resource.format_flags | dst_texture->resource.format_flags) & WINED3DFMT_FLAG_HEIGHT_SCALE)
             || (src_texture->resource.format->id == dst_texture->resource.format->id
             && (!(src_location & (WINED3D_LOCATION_TEXTURE_RGB | WINED3D_LOCATION_TEXTURE_SRGB))
             || !(dst_location & (WINED3D_LOCATION_TEXTURE_RGB | WINED3D_LOCATION_TEXTURE_SRGB)))))

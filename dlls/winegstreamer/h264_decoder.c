@@ -460,8 +460,18 @@ static HRESULT WINAPI transform_GetInputCurrentType(IMFTransform *iface, DWORD i
 
 static HRESULT WINAPI transform_GetOutputCurrentType(IMFTransform *iface, DWORD id, IMFMediaType **type)
 {
+    struct h264_decoder *decoder = impl_from_IMFTransform(iface);
+    HRESULT hr;
+
     FIXME("iface %p, id %#lx, type %p stub!\n", iface, id, type);
-    return E_NOTIMPL;
+
+    if (!decoder->output_type)
+        return MF_E_TRANSFORM_TYPE_NOT_SET;
+
+    if (FAILED(hr = MFCreateMediaType(type)))
+        return hr;
+
+    return IMFMediaType_CopyAllItems(decoder->output_type, (IMFAttributes *)*type);
 }
 
 static HRESULT WINAPI transform_GetInputStatus(IMFTransform *iface, DWORD id, DWORD *flags)
@@ -585,9 +595,28 @@ static const IMFTransformVtbl transform_vtbl =
 
 HRESULT h264_decoder_create(REFIID riid, void **ret)
 {
+    struct wg_format output_format =
+    {
+        .major_type = WG_MAJOR_TYPE_VIDEO,
+        .u.video =
+        {
+            .format = WG_VIDEO_FORMAT_I420,
+            .width = 1920,
+            .height = 1080,
+        },
+    };
+    struct wg_format input_format = {.major_type = WG_MAJOR_TYPE_H264};
+    struct wg_transform *transform;
     struct h264_decoder *decoder;
 
     TRACE("riid %s, ret %p.\n", debugstr_guid(riid), ret);
+
+    if (!(transform = wg_transform_create(&input_format, &output_format)))
+    {
+        FIXME("GStreamer doesn't support H264 decoding, please install appropriate plugins\n");
+        return E_FAIL;
+    }
+    wg_transform_destroy(transform);
 
     if (!(decoder = calloc(1, sizeof(*decoder))))
         return E_OUTOFMEMORY;
