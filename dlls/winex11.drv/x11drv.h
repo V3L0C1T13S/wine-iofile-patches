@@ -62,6 +62,7 @@ typedef int Status;
 #include "ntgdi.h"
 #include "wine/gdi_driver.h"
 #include "unixlib.h"
+#include "winnls.h"
 #include "wine/list.h"
 
 #define MAX_DASHLEN 16
@@ -282,21 +283,6 @@ extern const struct gdi_dc_funcs *X11DRV_XRender_Init(void) DECLSPEC_HIDDEN;
 
 extern struct opengl_funcs *get_glx_driver(UINT) DECLSPEC_HIDDEN;
 extern const struct vulkan_funcs *get_vulkan_driver(UINT) DECLSPEC_HIDDEN;
-
-/* IME support */
-extern void IME_SetOpenStatus(BOOL fOpen) DECLSPEC_HIDDEN;
-extern void IME_SetCompositionStatus(BOOL fOpen) DECLSPEC_HIDDEN;
-extern INT IME_GetCursorPos(void) DECLSPEC_HIDDEN;
-extern void IME_SetCursorPos(DWORD pos) DECLSPEC_HIDDEN;
-extern void IME_UpdateAssociation(HWND focus) DECLSPEC_HIDDEN;
-extern BOOL IME_SetCompositionString(DWORD dwIndex, LPCVOID lpComp,
-                                     DWORD dwCompLen, LPCVOID lpRead,
-                                     DWORD dwReadLen) DECLSPEC_HIDDEN;
-extern void IME_SetResultString(LPWSTR lpResult, DWORD dwResultlen) DECLSPEC_HIDDEN;
-
-
-extern void handle_dnd_enter_event( struct format_entry *formats, ULONG size ) DECLSPEC_HIDDEN;
-extern UINT handle_dnd_event( void *params ) DECLSPEC_HIDDEN;
 
 extern struct format_entry *import_xdnd_selection( Display *display, Window win, Atom selection,
                                                    Atom *targets, UINT count,
@@ -656,10 +642,11 @@ extern Window create_dummy_client_window(void) DECLSPEC_HIDDEN;
 extern Window create_client_window( HWND hwnd, const XVisualInfo *visual ) DECLSPEC_HIDDEN;
 extern void set_window_visual( struct x11drv_win_data *data, const XVisualInfo *vis, BOOL use_alpha ) DECLSPEC_HIDDEN;
 extern void change_systray_owner( Display *display, Window systray_window ) DECLSPEC_HIDDEN;
-extern void update_systray_balloon_position(void) DECLSPEC_HIDDEN;
 extern HWND create_foreign_window( Display *display, Window window ) DECLSPEC_HIDDEN;
 extern BOOL update_clipboard( HWND hwnd ) DECLSPEC_HIDDEN;
 extern void init_win_context(void) DECLSPEC_HIDDEN;
+extern void *file_list_to_drop_files( const void *data, size_t size, size_t *ret_size ) DECLSPEC_HIDDEN;
+extern void *uri_list_to_drop_files( const void *data, size_t size, size_t *ret_size ) DECLSPEC_HIDDEN;
 
 static inline void mirror_rect( const RECT *window_rect, RECT *rect )
 {
@@ -674,7 +661,6 @@ extern XContext winContext DECLSPEC_HIDDEN;
 /* X context to associate an X cursor to a Win32 cursor handle */
 extern XContext cursor_context DECLSPEC_HIDDEN;
 
-extern void X11DRV_InitClipboard(void) DECLSPEC_HIDDEN;
 extern void X11DRV_SetFocus( HWND hwnd ) DECLSPEC_HIDDEN;
 extern void set_window_cursor( Window window, HCURSOR handle ) DECLSPEC_HIDDEN;
 extern void sync_window_cursor( Window window ) DECLSPEC_HIDDEN;
@@ -686,8 +672,9 @@ extern void retry_grab_clipping_window(void) DECLSPEC_HIDDEN;
 extern BOOL clip_fullscreen_window( HWND hwnd, BOOL reset ) DECLSPEC_HIDDEN;
 extern void move_resize_window( HWND hwnd, int dir ) DECLSPEC_HIDDEN;
 extern void X11DRV_InitKeyboard( Display *display ) DECLSPEC_HIDDEN;
-extern DWORD X11DRV_MsgWaitForMultipleObjectsEx( DWORD count, const HANDLE *handles, DWORD timeout,
-                                                 DWORD mask, DWORD flags ) DECLSPEC_HIDDEN;
+extern NTSTATUS X11DRV_MsgWaitForMultipleObjectsEx( DWORD count, const HANDLE *handles,
+                                                    const LARGE_INTEGER *timeout,
+                                                    DWORD mask, DWORD flags ) DECLSPEC_HIDDEN;
 extern HWND *build_hwnd_list(void) DECLSPEC_HIDDEN;
 
 typedef int (*x11drv_error_callback)( Display *display, XErrorEvent *event, void *arg );
@@ -823,8 +810,6 @@ extern BOOL X11DRV_InitXIM( const WCHAR *input_style ) DECLSPEC_HIDDEN;
 extern XIC X11DRV_CreateIC(XIM xim, struct x11drv_win_data *data) DECLSPEC_HIDDEN;
 extern void X11DRV_SetupXIM(void) DECLSPEC_HIDDEN;
 extern void X11DRV_XIMLookupChars( const char *str, DWORD count ) DECLSPEC_HIDDEN;
-extern void X11DRV_ForceXIMReset(HWND hwnd) DECLSPEC_HIDDEN;
-extern void X11DRV_SetPreeditState(HWND hwnd, BOOL fOpen) DECLSPEC_HIDDEN;
 
 #define XEMBED_MAPPED  (1 << 0)
 
@@ -836,6 +821,43 @@ static inline BOOL is_window_rect_mapped( const RECT *rect )
             max( rect->right, rect->left + 1 ) > virtual_rect.left &&
             max( rect->bottom, rect->top + 1 ) > virtual_rect.top);
 }
+
+/* unixlib interface */
+
+extern NTSTATUS x11drv_clipboard_message( void *arg ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_create_desktop( void *arg ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_systray_clear( void *arg ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_systray_dock( void *arg ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_systray_hide( void *arg ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_systray_init( void *arg ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_tablet_attach_queue( void *arg ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_tablet_get_packet( void *arg ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_tablet_load_info( void *arg ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_tablet_info( void *arg ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_xim_preedit_state( void *arg ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_xim_reset( void *arg ) DECLSPEC_HIDDEN;
+
+extern NTSTATUS WINAPI x11drv_dnd_enter_event( void *params, ULONG size ) DECLSPEC_HIDDEN;
+extern NTSTATUS WINAPI x11drv_dnd_position_event( void *params, ULONG size ) DECLSPEC_HIDDEN;
+extern NTSTATUS WINAPI x11drv_dnd_post_drop( void *data, ULONG size ) DECLSPEC_HIDDEN;
+extern NTSTATUS WINAPI x11drv_ime_set_composition_string( void *params, ULONG size ) DECLSPEC_HIDDEN;
+extern NTSTATUS WINAPI x11drv_ime_set_result( void *params, ULONG size ) DECLSPEC_HIDDEN;
+extern NTSTATUS WINAPI x11drv_systray_change_owner( void *params, ULONG size ) DECLSPEC_HIDDEN;
+
+extern NTSTATUS x11drv_dnd_drop_event( UINT arg ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_dnd_leave_event( UINT arg ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_ime_get_cursor_pos( UINT arg ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_ime_set_composition_status( UINT arg ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_ime_set_cursor_pos( UINT pos ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_ime_set_open_status( UINT open ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_ime_update_association( UINT arg ) DECLSPEC_HIDDEN;
+
+extern LRESULT WINAPI foreign_window_proc( HWND hwnd, UINT msg, WPARAM wparam,
+                                           LPARAM lparam ) DECLSPEC_HIDDEN;
+
+extern NTSTATUS x11drv_client_func( enum x11drv_client_funcs func, const void *params,
+                                    ULONG size ) DECLSPEC_HIDDEN;
+extern NTSTATUS x11drv_client_call( enum client_callback func, UINT arg ) DECLSPEC_HIDDEN;
 
 /* GDI helpers */
 
@@ -913,6 +935,18 @@ static inline UINT asciiz_to_unicode( WCHAR *dst, const char *src )
     WCHAR *p = dst;
     while ((*p++ = *src++));
     return (p - dst) * sizeof(WCHAR);
+}
+
+/* FIXME: remove once we may use ntdll.so version */
+
+static inline DWORD ntdll_umbstowcs( const char *src, DWORD srclen, WCHAR *dst, DWORD dstlen )
+{
+    return MultiByteToWideChar( CP_UNIXCP, 0, src, srclen, dst, dstlen );
+}
+
+static inline int ntdll_wcstoumbs( const WCHAR *src, DWORD srclen, char *dst, DWORD dstlen, BOOL strict )
+{
+    return WideCharToMultiByte( CP_UNIXCP, 0, src, srclen, dst, dstlen, NULL, NULL );
 }
 
 #endif  /* __WINE_X11DRV_H */

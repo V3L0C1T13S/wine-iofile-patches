@@ -39,7 +39,6 @@
 
 #include "wine/debug.h"
 #include "wine/list.h"
-#include "wine/unicode.h"
 #include "wine/unixlib.h"
 
 #include "unixlib.h"
@@ -97,7 +96,7 @@ struct ACImpl {
     EDataFlow dataflow;
     float *vols;
     UINT32 channel_count;
-    struct oss_stream *stream;
+    stream_handle stream;
 
     HANDLE timer_thread;
 
@@ -240,7 +239,7 @@ int WINAPI AUDDRV_GetPriority(void)
     return params.priority;
 }
 
-static HRESULT stream_release(struct oss_stream *stream, HANDLE timer_thread)
+static HRESULT stream_release(stream_handle stream, HANDLE timer_thread)
 {
     struct release_stream_params params;
 
@@ -253,10 +252,10 @@ static HRESULT stream_release(struct oss_stream *stream, HANDLE timer_thread)
 
 static DWORD WINAPI timer_thread(void *user)
 {
-    struct oss_stream *stream = user;
     struct timer_loop_params params;
+    struct ACImpl *This = user;
 
-    params.stream = stream;
+    params.stream = This->stream;
     OSS_CALL(timer_loop, &params);
 
     return 0;
@@ -391,8 +390,10 @@ HRESULT WINAPI AUDDRV_GetEndpointIDs(EDataFlow flow, WCHAR ***ids_out, GUID **gu
     }
 
     for(i = 0; i < params.num; i++){
-        unsigned int name_size = (strlenW(params.endpoints[i].name) + 1) * sizeof(WCHAR);
-        unsigned int dev_size = strlen(params.endpoints[i].device) + 1;
+        WCHAR *name = (WCHAR *)((char *)params.endpoints + params.endpoints[i].name);
+        char *device = (char *)params.endpoints + params.endpoints[i].device;
+        unsigned int name_size = (wcslen(name) + 1) * sizeof(WCHAR);
+        unsigned int dev_size = strlen(device) + 1;
         OSSDevice *oss_dev;
 
         ids[i] = HeapAlloc(GetProcessHeap(), 0, name_size);
@@ -402,12 +403,12 @@ HRESULT WINAPI AUDDRV_GetEndpointIDs(EDataFlow flow, WCHAR ***ids_out, GUID **gu
             params.result = E_OUTOFMEMORY;
             goto end;
         }
-        memcpy(ids[i], params.endpoints[i].name, name_size);
-        get_device_guid(flow, params.endpoints[i].device, guids + i);
+        memcpy(ids[i], name, name_size);
+        get_device_guid(flow, device, guids + i);
 
         oss_dev->flow = flow;
         oss_dev->guid = guids[i];
-        memcpy(oss_dev->devnode, params.endpoints[i].device, dev_size);
+        memcpy(oss_dev->devnode, device, dev_size);
         device_add(oss_dev);
     }
     *def_index = params.default_idx;
@@ -652,7 +653,7 @@ static HRESULT WINAPI AudioClient_Initialize(IAudioClient3 *iface,
 {
     ACImpl *This = impl_from_IAudioClient3(iface);
     struct create_stream_params params;
-    struct oss_stream *stream;
+    stream_handle stream;
     unsigned int i;
 
     TRACE("(%p)->(%x, %x, %s, %s, %p, %s)\n", This, mode, flags,
@@ -914,7 +915,7 @@ static HRESULT WINAPI AudioClient_Start(IAudioClient3 *iface)
     OSS_CALL(start, &params);
 
     if(SUCCEEDED(params.result) && !This->timer_thread){
-        This->timer_thread = CreateThread(NULL, 0, timer_thread, This->stream, 0, NULL);
+        This->timer_thread = CreateThread(NULL, 0, timer_thread, This, 0, NULL);
         SetThreadPriority(This->timer_thread, THREAD_PRIORITY_TIME_CRITICAL);
     }
 
