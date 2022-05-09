@@ -18,14 +18,15 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "x11drv.h"
+#include "x11drv_dll.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(x11drv);
 
 
 HMODULE x11drv_module = 0;
+static unixlib_handle_t x11drv_handle;
+NTSTATUS (CDECL *x11drv_unix_call)( enum x11drv_funcs code, void *params );
 
 /**************************************************************************
  *		wait_clipboard_mutex
@@ -127,6 +128,36 @@ static NTSTATUS x11drv_clipboard_init( UINT arg )
 }
 
 
+static NTSTATUS WINAPI x11drv_is_system_module( void *arg, ULONG size )
+{
+    HMODULE module;
+    unsigned int i;
+
+    static const WCHAR cursor_modules[][16] =
+    {
+        { 'u','s','e','r','3','2','.','d','l','l',0 },
+        { 'c','o','m','c','t','l','3','2','.','d','l','l',0 },
+        { 'o','l','e','3','2','.','d','l','l',0 },
+        { 'r','i','c','h','e','d','2','0','.','d','l','l',0 }
+    };
+
+    if (!(module = GetModuleHandleW( arg ))) return system_module_none;
+
+    for (i = 0; i < ARRAYSIZE(cursor_modules); i++)
+    {
+        if (GetModuleHandleW( cursor_modules[i] ) == module) return i;
+    }
+
+    return system_module_none;
+}
+
+
+static NTSTATUS x11drv_load_icon( UINT id )
+{
+    return HandleToUlong( LoadIconW( NULL, UlongToPtr( id )));
+}
+
+
 typedef NTSTATUS (*callback_func)( UINT arg );
 static const callback_func callback_funcs[] =
 {
@@ -138,6 +169,7 @@ static const callback_func callback_funcs[] =
     x11drv_ime_set_cursor_pos,
     x11drv_ime_set_open_status,
     x11drv_ime_update_association,
+    x11drv_load_icon,
 };
 
 C_ASSERT( ARRAYSIZE(callback_funcs) == client_funcs_count );
@@ -157,23 +189,37 @@ static const kernel_callback kernel_callbacks[] =
     x11drv_dnd_post_drop,
     x11drv_ime_set_composition_string,
     x11drv_ime_set_result,
+    x11drv_is_system_module,
     x11drv_systray_change_owner,
 };
 
 C_ASSERT( NtUserDriverCallbackFirst + ARRAYSIZE(kernel_callbacks) == client_func_last );
 
+
 BOOL WINAPI DllMain( HINSTANCE instance, DWORD reason, void *reserved )
 {
     void **callback_table;
+    struct init_params params =
+    {
+        NtWaitForMultipleObjects,
+        foreign_window_proc,
+    };
 
     if (reason != DLL_PROCESS_ATTACH) return TRUE;
 
     DisableThreadLibraryCalls( instance );
     x11drv_module = instance;
-    if (X11DRV_CALL( init, NULL )) return FALSE;
+    if (NtQueryVirtualMemory( GetCurrentProcess(), instance, MemoryWineUnixFuncs,
+                              &x11drv_handle, sizeof(x11drv_handle), NULL ))
+        return FALSE;
+
+    if (__wine_unix_call( x11drv_handle, unix_init, &params )) return FALSE;
 
     callback_table = NtCurrentTeb()->Peb->KernelCallbackTable;
     memcpy( callback_table + NtUserDriverCallbackFirst, kernel_callbacks, sizeof(kernel_callbacks) );
+
+    show_systray = params.show_systray;
+    x11drv_unix_call = params.unix_call;
     return TRUE;
 }
 

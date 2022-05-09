@@ -19,6 +19,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#if 0
+#pragma makedep unix
+#endif
+
 #include "config.h"
 #include <stdlib.h>
 
@@ -31,7 +35,6 @@
 #include "winreg.h"
 #include "wingdi.h"
 #include "wine/debug.h"
-#include "wine/unicode.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(x11settings);
 
@@ -91,7 +94,7 @@ static BOOL nores_get_id(const WCHAR *device_name, ULONG_PTR *id)
     if (!get_primary_adapter( primary_adapter ))
         return FALSE;
 
-    *id = !lstrcmpiW( device_name, primary_adapter ) ? 1 : 0;
+    *id = !wcsicmp( device_name, primary_adapter ) ? 1 : 0;
     return TRUE;
 }
 
@@ -237,11 +240,11 @@ static HKEY get_display_device_reg_key( const WCHAR *device_name )
     HKEY hkey;
 
     /* Device name has to be \\.\DISPLAY%d */
-    if (strncmpiW(device_name, display, ARRAY_SIZE(display)))
+    if (wcsnicmp( device_name, display, ARRAY_SIZE(display) ))
         return FALSE;
 
     /* Parse \\.\DISPLAY* */
-    adapter_index = strtolW(device_name + ARRAY_SIZE(display), &end_ptr, 10) - 1;
+    adapter_index = wcstol( device_name + ARRAY_SIZE(display), &end_ptr, 10 ) - 1;
     if (*end_ptr)
         return FALSE;
 
@@ -500,7 +503,7 @@ BOOL X11DRV_EnumDisplaySettingsEx( LPCWSTR name, DWORD n, LPDEVMODEW devmode, DW
     }
 
     pthread_mutex_lock( &settings_mutex );
-    if (n == 0 || lstrcmpiW(cached_device_name, name) || cached_flags != flags)
+    if (n == 0 || wcsicmp(cached_device_name, name) || cached_flags != flags)
     {
         if (!handler.get_id(name, &id) || !handler.get_modes(id, flags, &modes, &mode_count))
         {
@@ -654,7 +657,7 @@ static LONG get_display_settings(struct x11drv_display_setting **new_displays,
 
             displays[display_idx].desired_mode = registry_mode;
         }
-        else if (!lstrcmpiW(dev_name, display_device.DeviceName))
+        else if (!wcsicmp(dev_name, display_device.DeviceName))
         {
             displays[display_idx].desired_mode = *dev_mode;
             if (!(dev_mode->dmFields & DM_POSITION))
@@ -950,7 +953,7 @@ LONG X11DRV_ChangeDisplaySettingsEx( LPCWSTR devname, LPDEVMODEW devmode,
     {
         for (display_idx = 0; display_idx < display_count; ++display_idx)
         {
-            if (!lstrcmpiW(displays[display_idx].desired_mode.dmDeviceName, devname))
+            if (!wcsicmp(displays[display_idx].desired_mode.dmDeviceName, devname))
             {
                 full_mode = get_full_mode(displays[display_idx].id, &displays[display_idx].desired_mode);
                 if (!full_mode)

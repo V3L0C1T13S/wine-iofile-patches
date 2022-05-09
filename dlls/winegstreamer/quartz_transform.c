@@ -20,7 +20,10 @@
 
 #include "gst_private.h"
 
+#include "mferror.h"
+
 WINE_DEFAULT_DEBUG_CHANNEL(quartz);
+WINE_DECLARE_DEBUG_CHANNEL(winediag);
 
 struct transform
 {
@@ -28,6 +31,8 @@ struct transform
 
     struct strmbase_sink sink;
     struct strmbase_source source;
+
+    struct wg_transform *transform;
 
     const struct transform_ops *ops;
 };
@@ -69,10 +74,21 @@ static void transform_destroy(struct strmbase_filter *iface)
 static HRESULT transform_init_stream(struct strmbase_filter *iface)
 {
     struct transform *filter = impl_from_strmbase_filter(iface);
+    struct wg_format input_format, output_format;
     HRESULT hr;
 
     if (filter->source.pin.peer)
     {
+        if (!amt_to_wg_format(&filter->sink.pin.mt, &input_format))
+            return E_FAIL;
+
+        if (!amt_to_wg_format(&filter->source.pin.mt, &output_format))
+            return E_FAIL;
+
+        filter->transform = wg_transform_create(&input_format, &output_format);
+        if (!filter->transform)
+            return E_FAIL;
+
         hr = IMemAllocator_Commit(filter->source.pAllocator);
         if (FAILED(hr))
             ERR("Failed to commit allocator, hr %#lx.\n", hr);
@@ -86,7 +102,11 @@ static HRESULT transform_cleanup_stream(struct strmbase_filter *iface)
     struct transform *filter = impl_from_strmbase_filter(iface);
 
     if (filter->source.pin.peer)
+    {
         IMemAllocator_Decommit(filter->source.pAllocator);
+
+        wg_transform_destroy(filter->transform);
+    }
 
     return S_OK;
 }
@@ -119,10 +139,94 @@ static HRESULT transform_sink_query_interface(struct strmbase_pin *pin, REFIID i
     return S_OK;
 }
 
+static HRESULT WINAPI transform_sink_receive(struct strmbase_sink *pin, IMediaSample *sample)
+{
+    struct transform *filter = impl_from_strmbase_filter(pin->pin.filter);
+    struct wg_sample input_wg_sample = {0};
+    HRESULT hr;
+
+    /* We do not expect pin connection state to change while the filter is
+     * running. This guarantee is necessary, since otherwise we would have to
+     * take the filter lock, and we can't take the filter lock from a streaming
+     * thread. */
+    if (!filter->source.pMemInputPin)
+    {
+        WARN("Source is not connected, returning VFW_E_NOT_CONNECTED.\n");
+        return VFW_E_NOT_CONNECTED;
+    }
+
+    if (filter->filter.state == State_Stopped)
+        return VFW_E_WRONG_STATE;
+
+    if (filter->sink.flushing)
+        return S_FALSE;
+
+    input_wg_sample.max_size = IMediaSample_GetSize(sample);
+    input_wg_sample.size = IMediaSample_GetActualDataLength(sample);
+
+    hr = IMediaSample_GetPointer(sample, &input_wg_sample.data);
+    if (FAILED(hr))
+        return hr;
+
+    hr = wg_transform_push_data(filter->transform, &input_wg_sample);
+    if (FAILED(hr))
+        return hr;
+
+    for (;;)
+    {
+        struct wg_sample output_wg_sample = {0};
+        IMediaSample *output_sample;
+
+        hr = IMemAllocator_GetBuffer(filter->source.pAllocator, &output_sample, NULL, NULL, 0);
+        if (FAILED(hr))
+            return hr;
+
+        output_wg_sample.max_size = IMediaSample_GetSize(output_sample);
+
+        hr = IMediaSample_GetPointer(output_sample, &output_wg_sample.data);
+        if (FAILED(hr))
+        {
+            IMediaSample_Release(output_sample);
+            return hr;
+        }
+
+        hr = wg_transform_read_data(filter->transform, &output_wg_sample);
+        if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT)
+        {
+            IMediaSample_Release(output_sample);
+            break;
+        }
+        if (FAILED(hr))
+        {
+            IMediaSample_Release(output_sample);
+            return hr;
+        }
+
+        hr = IMediaSample_SetActualDataLength(output_sample, output_wg_sample.size);
+        if (FAILED(hr))
+        {
+            IMediaSample_Release(output_sample);
+            return hr;
+        }
+
+        hr = IMemInputPin_Receive(filter->source.pMemInputPin, output_sample);
+        if (FAILED(hr))
+        {
+            IMediaSample_Release(output_sample);
+            return hr;
+        }
+
+        IMediaSample_Release(output_sample);
+    }
+
+    return S_OK;
+}
+
 static const struct strmbase_sink_ops sink_ops =
 {
     .base.pin_query_accept = transform_sink_query_accept,
     .base.pin_query_interface = transform_sink_query_interface,
+    .pfnReceive = transform_sink_receive,
 };
 
 static HRESULT transform_source_query_accept(struct strmbase_pin *pin, const AM_MEDIA_TYPE *mt)
@@ -296,8 +400,38 @@ static const struct transform_ops mpeg_audio_codec_transform_ops =
 
 HRESULT mpeg_audio_codec_create(IUnknown *outer, IUnknown **out)
 {
+    static const struct wg_format output_format =
+    {
+        .major_type = WG_MAJOR_TYPE_AUDIO,
+        .u.audio =
+        {
+            .format = WG_AUDIO_FORMAT_S16LE,
+            .channel_mask = 1,
+            .channels = 1,
+            .rate = 44100,
+        },
+    };
+    static const struct wg_format input_format =
+    {
+        .major_type = WG_MAJOR_TYPE_MPEG1_AUDIO,
+        .u.mpeg1_audio =
+        {
+            .layer = 2,
+            .channels = 1,
+            .rate = 44100,
+        },
+    };
+    struct wg_transform *transform;
     struct transform *object;
     HRESULT hr;
+
+    transform = wg_transform_create(&input_format, &output_format);
+    if (!transform)
+    {
+        ERR_(winediag)("GStreamer doesn't support MPEG-1 audio decoding, please install appropriate plugins.\n");
+        return E_FAIL;
+    }
+    wg_transform_destroy(transform);
 
     hr = transform_create(outer, &CLSID_CMpegAudioCodec, &mpeg_audio_codec_transform_ops, &object);
     if (FAILED(hr))

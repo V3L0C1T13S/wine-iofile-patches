@@ -19,6 +19,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#if 0
+#pragma makedep unix
+#endif
+
 #include "config.h"
 
 #include <math.h>
@@ -52,7 +56,6 @@ MAKE_FUNCPTR(XcursorLibraryLoadCursor);
 
 #include "x11drv.h"
 #include "wine/server.h"
-#include "wine/unicode.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(cursor);
@@ -373,6 +376,7 @@ static BOOL grab_clipping_window( const RECT *clip )
 #if HAVE_X11_EXTENSIONS_XINPUT2_H
     static const WCHAR messageW[] = {'M','e','s','s','a','g','e',0};
     struct x11drv_thread_data *data = x11drv_thread_data();
+    UNICODE_STRING class_name;
     Window clip_window;
     HWND msg_hwnd = 0;
     POINT pos;
@@ -383,8 +387,10 @@ static BOOL grab_clipping_window( const RECT *clip )
     if (!data) return FALSE;
     if (!(clip_window = init_clip_window())) return TRUE;
 
-    if (!(msg_hwnd = CreateWindowW( messageW, NULL, 0, 0, 0, 0, 0, HWND_MESSAGE, 0,
-                                    GetModuleHandleW(0), NULL )))
+    RtlInitUnicodeString( &class_name, messageW );
+    if (!(msg_hwnd = NtUserCreateWindowEx( 0, &class_name, &class_name, NULL, 0, 0, 0, 0, 0,
+                                           HWND_MESSAGE, 0, NtCurrentTeb()->Peb->ImageBaseAddress,
+                                           NULL, 0, NULL, 0, FALSE )))
         return TRUE;
 
     if (keyboard_grabbed)
@@ -927,16 +933,12 @@ static const struct system_cursors riched20_cursors[] =
     { 0 }
 };
 
-static const struct
+static const struct system_cursors *module_cursors[] =
 {
-    const struct system_cursors *cursors;
-    WCHAR name[16];
-} module_cursors[] =
-{
-    { user32_cursors, {'u','s','e','r','3','2','.','d','l','l',0} },
-    { comctl32_cursors, {'c','o','m','c','t','l','3','2','.','d','l','l',0} },
-    { ole32_cursors, {'o','l','e','3','2','.','d','l','l',0} },
-    { riched20_cursors, {'r','i','c','h','e','d','2','0','.','d','l','l',0} }
+    user32_cursors,
+    comctl32_cursors,
+    ole32_cursors,
+    riched20_cursors,
 };
 
 struct cursor_font_fallback
@@ -1056,7 +1058,6 @@ static Cursor create_xcursor_system_cursor( const ICONINFOEXW *info )
     const struct system_cursors *cursors;
     unsigned int i;
     Cursor cursor = 0;
-    HMODULE module;
     HKEY key;
     const char * const *names = NULL;
     WCHAR *p, name[MAX_PATH * 2];
@@ -1064,11 +1065,11 @@ static Cursor create_xcursor_system_cursor( const ICONINFOEXW *info )
 
     if (!info->szModName[0]) return 0;
 
-    p = strrchrW( info->szModName, '\\' );
-    strcpyW( name, p ? p + 1 : info->szModName );
-    p = name + strlenW( name );
+    p = wcsrchr( info->szModName, '\\' );
+    wcscpy( name, p ? p + 1 : info->szModName );
+    p = name + lstrlenW( name );
     *p++ = ',';
-    if (info->szResName[0]) strcpyW( p, info->szResName );
+    if (info->szResName[0]) wcscpy( p, info->szResName );
     else
     {
         char buf[16];
@@ -1095,13 +1096,11 @@ static Cursor create_xcursor_system_cursor( const ICONINFOEXW *info )
     }
 
     if (info->szResName[0]) goto done;  /* only integer resources are supported here */
-    if (!(module = GetModuleHandleW( info->szModName ))) goto done;
+    i = x11drv_client_func( client_func_is_system_module, info->szModName,
+                            (lstrlenW( info->szModName ) + 1) * sizeof(WCHAR) );
+    if (i == system_module_none) goto done;
 
-    for (i = 0; i < ARRAY_SIZE( module_cursors ); i++)
-        if (GetModuleHandleW( module_cursors[i].name ) == module) break;
-    if (i == ARRAY_SIZE( module_cursors )) goto done;
-
-    cursors = module_cursors[i].cursors;
+    cursors = module_cursors[i];
     for (i = 0; cursors[i].id; i++)
         if (cursors[i].id == info->wResID)
         {

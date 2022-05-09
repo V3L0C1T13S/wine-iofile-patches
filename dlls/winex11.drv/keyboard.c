@@ -23,6 +23,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#if 0
+#pragma makedep unix
+#endif
+
 #include "config.h"
 
 #include <X11/Xatom.h>
@@ -49,7 +53,6 @@
 #include "ime.h"
 #include "x11drv.h"
 #include "wine/server.h"
-#include "wine/unicode.h"
 #include "wine/debug.h"
 
 /* log format (add 0-padding as appropriate):
@@ -2100,7 +2103,7 @@ UINT X11DRV_MapVirtualKeyEx( UINT wCode, UINT wMapType, HKL hkl )
             if (len)
             {
                 WCHAR wch;
-                if (ntdll_umbstowcs( s, len, &wch, 1 )) ret = toupperW(wch);
+                if (ntdll_umbstowcs( s, len, &wch, 1 )) ret = RtlUpcaseUnicodeChar( wch );
             }
             break;
         }
@@ -2167,7 +2170,7 @@ INT X11DRV_GetKeyNameText( LONG lParam, LPWSTR lpBuffer, INT nSize )
       {
         if (nSize >= 2)
 	{
-          *lpBuffer = toupperW((WCHAR)ansi);
+          *lpBuffer = RtlUpcaseUnicodeChar( ansi );
           *(lpBuffer+1) = 0;
           return 1;
         }
@@ -2203,7 +2206,7 @@ INT X11DRV_GetKeyNameText( LONG lParam, LPWSTR lpBuffer, INT nSize )
       if (name && (vkey == VK_SHIFT || vkey == VK_CONTROL || vkey == VK_MENU))
       {
           char* idx = strrchr(name, '_');
-          if (idx && (_strnicmp(idx, "_r", -1) == 0 || _strnicmp(idx, "_l", -1) == 0))
+          if (idx && (idx[1] == 'r' || idx[1] == 'R' || idx[1] == 'l' || idx[1] == 'L') && !idx[2])
           {
               pthread_mutex_unlock( &kbd_mutex );
               TRACE("found scan=%04x keyc=%u keysym=%lx modified_string=%s\n",

@@ -20,29 +20,17 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-
-#include <assert.h>
-#include <stdarg.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>
-
-#include <X11/Xlib.h>
-
 #define NONAMELESSUNION
-#include "windef.h"
-#include "winbase.h"
-#include "wingdi.h"
-#include "winuser.h"
+#include "x11drv_dll.h"
 #include "commctrl.h"
 #include "shellapi.h"
 
-#include "x11drv.h"
 #include "wine/list.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(systray);
+
+BOOL show_systray = TRUE;
 
 /* an individual systray icon */
 struct tray_icon

@@ -38,7 +38,7 @@ enum x11drv_funcs
 };
 
 /* FIXME: Use __wine_unix_call when the rest of the stack is ready */
-extern NTSTATUS x11drv_unix_call( enum x11drv_funcs code, void *params ) DECLSPEC_HIDDEN;
+extern NTSTATUS (CDECL *x11drv_unix_call)( enum x11drv_funcs code, void *params ) DECLSPEC_HIDDEN;
 #define X11DRV_CALL(func, params) x11drv_unix_call( unix_ ## func, params )
 
 /* x11drv_clipboard_message params */
@@ -57,6 +57,15 @@ struct create_desktop_params
     UINT height;
 };
 
+/* x11drv_init params */
+struct init_params
+{
+    NTSTATUS (WINAPI *pNtWaitForMultipleObjects)(ULONG,const HANDLE*,BOOLEAN,BOOLEAN,const LARGE_INTEGER*);
+    WNDPROC foreign_window_proc;
+    BOOL show_systray;
+    NTSTATUS (CDECL *unix_call)( enum x11drv_funcs code, void *params );
+};
+
 struct systray_dock_params
 {
     UINT64 event_handle;
@@ -64,6 +73,15 @@ struct systray_dock_params
     int cx;
     int cy;
     BOOL *layered;
+};
+
+enum system_modules
+{
+    system_module_user32,
+    system_module_comctl32,
+    system_module_ole32,
+    system_module_riched20,
+    system_module_none = 0xffff,
 };
 
 /* x11drv_tablet_info params */
@@ -90,6 +108,7 @@ enum x11drv_client_funcs
     client_func_dnd_post_drop,
     client_func_ime_set_composition_string,
     client_func_ime_set_result,
+    client_func_is_system_module,
     client_func_systray_change_owner,
     client_func_last
 };
@@ -107,6 +126,7 @@ enum client_callback
     client_ime_set_cursor_pos,
     client_ime_set_open_status,
     client_ime_update_association,
+    client_load_icon,
     client_funcs_count
 };
 

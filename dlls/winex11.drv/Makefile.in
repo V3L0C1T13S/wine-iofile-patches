@@ -1,11 +1,10 @@
 EXTRADEFS = -DWINE_NO_LONG_TYPES
 MODULE    = winex11.drv
+UNIXLIB   = winex11.so
 IMPORTS   = uuid user32 gdi32 win32u
 DELAYIMPORTS = comctl32 ole32 shell32 imm32
 EXTRAINCL = $(X_CFLAGS)
-EXTRALIBS = $(X_LIBS) $(X_EXTRA_LIBS) $(PTHREAD_LIBS)
-
-EXTRADLLFLAGS = -mcygwin
+EXTRALIBS = -lwin32u $(X_LIBS) $(X_EXTRA_LIBS) $(PTHREAD_LIBS) -lm
 
 C_SRCS = \
 	bitblt.c \

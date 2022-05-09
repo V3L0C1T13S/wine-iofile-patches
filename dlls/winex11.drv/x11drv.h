@@ -62,7 +62,6 @@ typedef int Status;
 #include "ntgdi.h"
 #include "wine/gdi_driver.h"
 #include "unixlib.h"
-#include "winnls.h"
 #include "wine/list.h"
 
 #define MAX_DASHLEN 16
@@ -435,9 +434,12 @@ extern int primary_monitor DECLSPEC_HIDDEN;
 extern int copy_default_colors DECLSPEC_HIDDEN;
 extern int alloc_system_colors DECLSPEC_HIDDEN;
 extern int xrender_error_base DECLSPEC_HIDDEN;
-extern HMODULE x11drv_module DECLSPEC_HIDDEN;
 extern char *process_name DECLSPEC_HIDDEN;
 extern Display *clipboard_display DECLSPEC_HIDDEN;
+extern WNDPROC client_foreign_window_proc;
+
+extern NTSTATUS (WINAPI *pNtWaitForMultipleObjects)(ULONG,const HANDLE*,BOOLEAN,
+                                                    BOOLEAN,const LARGE_INTEGER*) DECLSPEC_HIDDEN;
 
 /* atoms */
 
@@ -837,24 +839,6 @@ extern NTSTATUS x11drv_tablet_info( void *arg ) DECLSPEC_HIDDEN;
 extern NTSTATUS x11drv_xim_preedit_state( void *arg ) DECLSPEC_HIDDEN;
 extern NTSTATUS x11drv_xim_reset( void *arg ) DECLSPEC_HIDDEN;
 
-extern NTSTATUS WINAPI x11drv_dnd_enter_event( void *params, ULONG size ) DECLSPEC_HIDDEN;
-extern NTSTATUS WINAPI x11drv_dnd_position_event( void *params, ULONG size ) DECLSPEC_HIDDEN;
-extern NTSTATUS WINAPI x11drv_dnd_post_drop( void *data, ULONG size ) DECLSPEC_HIDDEN;
-extern NTSTATUS WINAPI x11drv_ime_set_composition_string( void *params, ULONG size ) DECLSPEC_HIDDEN;
-extern NTSTATUS WINAPI x11drv_ime_set_result( void *params, ULONG size ) DECLSPEC_HIDDEN;
-extern NTSTATUS WINAPI x11drv_systray_change_owner( void *params, ULONG size ) DECLSPEC_HIDDEN;
-
-extern NTSTATUS x11drv_dnd_drop_event( UINT arg ) DECLSPEC_HIDDEN;
-extern NTSTATUS x11drv_dnd_leave_event( UINT arg ) DECLSPEC_HIDDEN;
-extern NTSTATUS x11drv_ime_get_cursor_pos( UINT arg ) DECLSPEC_HIDDEN;
-extern NTSTATUS x11drv_ime_set_composition_status( UINT arg ) DECLSPEC_HIDDEN;
-extern NTSTATUS x11drv_ime_set_cursor_pos( UINT pos ) DECLSPEC_HIDDEN;
-extern NTSTATUS x11drv_ime_set_open_status( UINT open ) DECLSPEC_HIDDEN;
-extern NTSTATUS x11drv_ime_update_association( UINT arg ) DECLSPEC_HIDDEN;
-
-extern LRESULT WINAPI foreign_window_proc( HWND hwnd, UINT msg, WPARAM wparam,
-                                           LPARAM lparam ) DECLSPEC_HIDDEN;
-
 extern NTSTATUS x11drv_client_func( enum x11drv_client_funcs func, const void *params,
                                     ULONG size ) DECLSPEC_HIDDEN;
 extern NTSTATUS x11drv_client_call( enum client_callback func, UINT arg ) DECLSPEC_HIDDEN;
@@ -937,16 +921,54 @@ static inline UINT asciiz_to_unicode( WCHAR *dst, const char *src )
     return (p - dst) * sizeof(WCHAR);
 }
 
-/* FIXME: remove once we may use ntdll.so version */
-
-static inline DWORD ntdll_umbstowcs( const char *src, DWORD srclen, WCHAR *dst, DWORD dstlen )
+static inline LONG x11drv_wcstol( LPCWSTR s, LPWSTR *end, INT base )
 {
-    return MultiByteToWideChar( CP_UNIXCP, 0, src, srclen, dst, dstlen );
+    BOOL negative = FALSE, empty = TRUE;
+    LONG ret = 0;
+
+    if (base < 0 || base == 1 || base > 36) return 0;
+    if (end) *end = (WCHAR *)s;
+    while (*s == ' ' || *s == '\t') s++;
+
+    if (*s == '-')
+    {
+        negative = TRUE;
+        s++;
+    }
+    else if (*s == '+') s++;
+
+    if ((base == 0 || base == 16) && s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
+    {
+        base = 16;
+        s += 2;
+    }
+    if (base == 0) base = s[0] != '0' ? 10 : 8;
+
+    while (*s)
+    {
+        int v;
+
+        if ('0' <= *s && *s <= '9') v = *s - '0';
+        else if ('A' <= *s && *s <= 'Z') v = *s - 'A' + 10;
+        else if ('a' <= *s && *s <= 'z') v = *s - 'a' + 10;
+        else break;
+        if (v >= base) break;
+        if (negative) v = -v;
+        s++;
+        empty = FALSE;
+
+        if (!negative && (ret > MAXLONG / base || ret * base > MAXLONG - v))
+            ret = MAXLONG;
+        else if (negative && (ret < (LONG)MINLONG / base || ret * base < (LONG)(MINLONG - v)))
+            ret = MINLONG;
+        else
+            ret = ret * base + v;
+    }
+
+    if (end && !empty) *end = (WCHAR *)s;
+    return ret;
 }
 
-static inline int ntdll_wcstoumbs( const WCHAR *src, DWORD srclen, char *dst, DWORD dstlen, BOOL strict )
-{
-    return WideCharToMultiByte( CP_UNIXCP, 0, src, srclen, dst, dstlen, NULL, NULL );
-}
+#define wcstol x11drv_wcstol
 
 #endif  /* __WINE_X11DRV_H */

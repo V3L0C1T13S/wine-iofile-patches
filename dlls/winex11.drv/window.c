@@ -20,6 +20,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#if 0
+#pragma makedep unix
+#endif
+
 #include "config.h"
 
 #include <stdarg.h>
@@ -45,7 +49,6 @@
 #include "winbase.h"
 #include "wingdi.h"
 #include "winuser.h"
-#include "wine/unicode.h"
 
 #include "x11drv.h"
 #include "wine/debug.h"
@@ -627,7 +630,10 @@ static void fetch_icon_data( HWND hwnd, HICON icon_big, HICON icon_small )
         if (!icon_big)
             icon_big = get_icon_info( (HICON)NtUserGetClassLongPtrW( hwnd, GCLP_HICON ), &ii );
         if (!icon_big)
-            icon_big = get_icon_info( LoadIconW( 0, (LPWSTR)IDI_WINLOGO ), &ii);
+        {
+            UINT winlogo = x11drv_client_call( client_load_icon, IDI_WINLOGO );
+            icon_big = get_icon_info( UlongToHandle( winlogo ), &ii );
+        }
     }
     if (!icon_small)
     {
@@ -2004,15 +2010,16 @@ HWND create_foreign_window( Display *display, Window xwin )
     unsigned int nchildren;
     XWindowAttributes attr;
     DWORD style = WS_CLIPCHILDREN;
+    UNICODE_STRING class_name;
 
     if (!class_registered)
     {
-        UNICODE_STRING class_name, version = { 0 };
+        UNICODE_STRING version = { 0 };
         WNDCLASSEXW class;
 
         memset( &class, 0, sizeof(class) );
         class.cbSize        = sizeof(class);
-        class.lpfnWndProc   = foreign_window_proc;
+        class.lpfnWndProc   = client_foreign_window_proc;
         class.lpszClassName = classW;
         RtlInitUnicodeString( &class_name, classW );
         if (!NtUserRegisterClassExWOW( &class, &class_name, &version, NULL, 0, 0, NULL ) &&
@@ -2050,8 +2057,10 @@ HWND create_foreign_window( Display *display, Window xwin )
         pos.y = attr.y;
     }
 
-    hwnd = CreateWindowW( classW, NULL, style, pos.x, pos.y, attr.width, attr.height,
-                          parent, 0, 0, NULL );
+    RtlInitUnicodeString( &class_name, classW );
+    hwnd = NtUserCreateWindowEx( 0, &class_name, &class_name, NULL, style, pos.x, pos.y,
+                                 attr.width, attr.height, parent, 0, NULL, NULL, 0, NULL,
+                                 0, FALSE );
 
     if (!(data = alloc_win_data( display, hwnd )))
     {
@@ -2167,6 +2176,7 @@ NTSTATUS x11drv_systray_dock( void *arg )
     XSetWindowAttributes attr;
     XVisualInfo visual;
     struct x11drv_win_data *data;
+    UNICODE_STRING class_name;
     BOOL layered;
     HWND hwnd;
 
@@ -2189,10 +2199,11 @@ NTSTATUS x11drv_systray_dock( void *arg )
 
     *params->layered = layered = (visual.depth == 32);
 
-    hwnd = CreateWindowExW( layered ? WS_EX_LAYERED : 0,
-                            icon_classname, NULL, WS_CLIPSIBLINGS | WS_POPUP,
-                            CW_USEDEFAULT, CW_USEDEFAULT, params->cx, params->cy,
-                            NULL, NULL, NULL, params->icon );
+    RtlInitUnicodeString( &class_name, icon_classname );
+    hwnd = NtUserCreateWindowEx( layered ? WS_EX_LAYERED : 0, &class_name, &class_name, NULL,
+                                 WS_CLIPSIBLINGS | WS_POPUP, CW_USEDEFAULT, CW_USEDEFAULT,
+                                 params->cx, params->cy, NULL, 0, NULL, params->icon, 0,
+                                 NULL, 0, FALSE );
 
     if (!(data = get_win_data( hwnd ))) return STATUS_UNSUCCESSFUL;
     if (layered) set_window_visual( data, &visual, TRUE );
