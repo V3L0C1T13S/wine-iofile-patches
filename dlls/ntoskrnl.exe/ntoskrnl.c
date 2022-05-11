@@ -3517,6 +3517,17 @@ BOOLEAN WINAPI KeAreApcsDisabled(void)
 }
 
 /***********************************************************************
+ *           KeAreAllApcsDisabled    (NTOSKRNL.@)
+ */
+BOOLEAN WINAPI KeAreAllApcsDisabled(void)
+{    
+    FIXME( "semi-stub\n" );
+    unsigned int critical_region = KeGetCurrentThread()->critical_region;
+    TRACE( "%u\n", critical_region );
+    return !!critical_region;
+}
+
+/***********************************************************************
  *           KeBugCheck    (NTOSKRNL.@)
  */
 void WINAPI KeBugCheck(ULONG code)
@@ -4116,7 +4127,6 @@ IoCreateNotificationEvent returns a pointer to the created or opened event objec
     *handle = local_handle;
     return (PKEVENT)local_handle;
 }
-
 
 /**************************************************************************
  *		__chkstk (NTOSKRNL.@)
