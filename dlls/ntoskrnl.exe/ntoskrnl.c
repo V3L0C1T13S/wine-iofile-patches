@@ -4007,33 +4007,6 @@ NTSTATUS WINAPI IoCreateFile(HANDLE *handle, ACCESS_MASK access, OBJECT_ATTRIBUT
                               ULONG disposition, ULONG create_options, VOID *ea_buffer, ULONG ea_length,
                               CREATE_FILE_TYPE file_type, VOID *parameters, ULONG options )
 {
-    /** According to MSDN, The IoCreateFile routine either causes a new file or directory to be created, or it opens an existing file, device, directory, or volume, giving the caller a handle for the file object. 
-     * [out] FileHandle - Pointer to a variable that receives the file handle if the call is successful. The driver must close the handle with ZwClose once the handle is no longer in use.
-    */
-
-    /** 
-     * NTSTATUS status;
-    IO_STATUS_BLOCK local_io;
-    OBJECT_ATTRIBUTES local_attr;
-    HANDLE local_handle;
-
-    TRACE( "(%p, 0x%08x, %p, %p, %p, 0x%08x, 0x%08x, 0x%08x, 0x%08x, %p, 0x%08x, %p, 0x%08x)\n",
-           handle, access, attr, io, alloc_size, attributes, sharing, disposition, create_options,
-           ea_buffer, ea_length, file_type, parameters, options );
-
-    if (!io) io = &local_io;
-    if (!attr) attr = &local_attr;
-
-    status = NtCreateFile( &local_handle, access, attr, io, alloc_size, attributes, sharing, disposition,
-                           create_options, ea_buffer, ea_length, file_type, parameters, options );
-    if (status == STATUS_SUCCESS)
-    {
-        if (handle) *handle = local_handle;
-        else NtClose( local_handle );
-    }
-    return status;
-    */
-
     NTSTATUS status;
 
     TRACE( "(%p, %08x, %p, %p, %p, %08x, %08x, %08x, %08x, %p, %08x, %p, %08x)\n",
@@ -4079,26 +4052,21 @@ NTSTATUS WINAPI IoCreateFile(HANDLE *handle, ACCESS_MASK access, OBJECT_ATTRIBUT
 }
 
 /***********************************************************************
+ *           IoCreateFileEx (NTOSKRNL.EXE.@)
+ */
+NTSTATUS WINAPI IoCreateFileEx(HANDLE *handle, ACCESS_MASK access, OBJECT_ATTRIBUTES *attr,
+                              IO_STATUS_BLOCK *io, LARGE_INTEGER *alloc_size, ULONG attributes, ULONG sharing,
+                              ULONG disposition, ULONG create_options, VOID *ea_buffer, ULONG ea_length,
+                              CREATE_FILE_TYPE file_type, VOID *parameters, ULONG options )
+{
+    TRACE( "semi-stub\n" );
+    return IoCreateFile( handle, access, attr, io, alloc_size, attributes, sharing, disposition, create_options, ea_buffer, ea_length, file_type, parameters, options );
+}
+/***********************************************************************
  *           IoCreateNotificationEvent (NTOSKRNL.EXE.@)
  */
 PKEVENT WINAPI IoCreateNotificationEvent(UNICODE_STRING *name, HANDLE *handle)
-{
-    /** 
-     * The IoCreateNotificationEvent routine creates or opens a named notification event used to notify one or more threads of execution that an event has occurred.
-     * Parameters
-
-[in] EventName
-
-Pointer to a buffer containing a null-terminated Unicode string that names the event.
-
-[out] EventHandle
-
-Pointer to a location in which to return a kernel handle for the event object.
-Return value
-
-IoCreateNotificationEvent returns a pointer to the created or opened event object or NULL if the event object could not be created or opened.
-    */
-
+{ 
     NTSTATUS status;
     HANDLE local_handle;
     OBJECT_ATTRIBUTES attr;
