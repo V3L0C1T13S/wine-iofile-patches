@@ -3526,6 +3526,16 @@ BOOLEAN WINAPI KeAreAllApcsDisabled(void)
 }
 
 /***********************************************************************
+ *           KeIpiGenericCall    (NTOSKRNL.@)
+ */
+ULONG_PTR WINAPI KeIpiGenericCall(PKIPI_BROADCAST_WORKER BroadcastFunction, ULONG_PTR Context)
+{
+    FIXME("(%p %lx) stub\n", BroadcastFunction, Context);
+    BroadcastFunction( Context );
+    return 0;
+}
+
+/***********************************************************************
  *           KeBugCheck    (NTOSKRNL.@)
  */
 void WINAPI KeBugCheck(ULONG code)

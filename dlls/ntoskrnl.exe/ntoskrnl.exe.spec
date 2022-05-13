@@ -535,6 +535,7 @@
 @ stdcall KeAlertThread(ptr long)
 @ stdcall KeAreApcsDisabled()
 @ stdcall KeAreAllApcsDisabled()
+@ stdcall KeIpiGenericCall()
 @ stub KeAttachProcess
 @ stdcall KeBugCheck(long)
 @ stdcall KeBugCheckEx(long long long long long)

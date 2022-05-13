@@ -83,6 +83,8 @@ extern POBJECT_TYPE PsProcessType;
 extern POBJECT_TYPE PsThreadType;
 extern POBJECT_TYPE SeTokenObjectType;
 
+typedef PKIPI_BROADCAST_WORKER(ULONG_PTR);
+
 #define DECLARE_CRITICAL_SECTION(cs) \
     static CRITICAL_SECTION cs; \
     static CRITICAL_SECTION_DEBUG cs##_debug = \
