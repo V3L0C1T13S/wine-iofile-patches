@@ -3520,11 +3520,9 @@ BOOLEAN WINAPI KeAreApcsDisabled(void)
  *           KeAreAllApcsDisabled    (NTOSKRNL.@)
  */
 BOOLEAN WINAPI KeAreAllApcsDisabled(void)
-{    
+{
     FIXME( "semi-stub\n" );
-    unsigned int critical_region = KeGetCurrentThread()->critical_region;
-    TRACE( "%u\n", critical_region );
-    return !!critical_region;
+    return KeAreApcsDisabled();
 }
 
 /***********************************************************************
