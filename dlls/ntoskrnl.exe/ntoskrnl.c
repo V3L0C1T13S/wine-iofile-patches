@@ -3521,8 +3521,11 @@ BOOLEAN WINAPI KeAreApcsDisabled(void)
  */
 BOOLEAN WINAPI KeAreAllApcsDisabled(void)
 {
-    FIXME( "semi-stub\n" );
-    return KeAreApcsDisabled();
+    unsigned int critical_region = KeGetCurrentThread()->critical_region;
+    BOOLEAN in_dispatch = TRUE;
+    FIXME( "%u %u\n", critical_region, in_dispatch );
+
+    return !!critical_region && in_dispatch;
 }
 
 /***********************************************************************
