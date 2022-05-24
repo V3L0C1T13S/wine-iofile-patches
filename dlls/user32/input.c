@@ -533,6 +533,15 @@ BOOL WINAPI EnableMouseInPointer(BOOL enable)
     return FALSE;
 }
 
+/***********************************************************************
+ *		IsMouseInPointerEnabled (USER32.@)
+ */
+BOOL WINAPI IsMouseInPointerEnabled() {
+    FIXME("semi-stub\n");
+
+    return TRUE;
+}
+
 static DWORD CALLBACK devnotify_window_callback(HANDLE handle, DWORD flags, DEV_BROADCAST_HDR *header)
 {
     SendMessageTimeoutW(handle, WM_DEVICECHANGE, flags, (LPARAM)header, SMTO_ABORTIFHUNG, 2000, NULL);
